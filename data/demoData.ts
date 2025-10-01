@@ -12,9 +12,11 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   isUser: boolean;
-  type: 'text' | 'voice';
+  type: 'text' | 'voice' | 'pdf';
   voiceDuration?: number;
   recordingUri?: string | null;
+  fileName?: string;
+  fileUrl?: string;
 }
 
 export interface Chat {
@@ -99,6 +101,15 @@ export const demoChats: Chat[] = [
         isUser: true,
         type: 'text',
       },
+      {
+        id: '5',
+        text: 'Project_Proposal.pdf',
+        timestamp: '2:32 PM',
+        isUser: false,
+        type: 'pdf',
+        fileName: 'Project_Proposal.pdf',
+        fileUrl: 'https://pdfobject.com/pdf/sample.pdf',
+      },
     ],
   },
   {
@@ -118,6 +129,15 @@ export const demoChats: Chat[] = [
         timestamp: '1:15 PM',
         isUser: false,
         type: 'text',
+      },
+      {
+        id: '3',
+        text: 'Meeting_Notes.pdf',
+        timestamp: '1:20 PM',
+        isUser: true,
+        type: 'pdf',
+        fileName: 'Meeting_Notes.pdf',
+        fileUrl: 'https://pdfobject.com/pdf/sample.pdf',
       },
     ],
   },

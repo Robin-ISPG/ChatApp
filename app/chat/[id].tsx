@@ -8,7 +8,13 @@ import {
   useAudioRecorder,
   useAudioRecorderState
 } from 'expo-audio';
+import { Directory, File, Paths } from 'expo-file-system';
+import { fetch } from 'expo/fetch';
+import * as FileSystem from 'expo-file-system';
+import { getContentUriAsync } from 'expo-file-system/legacy';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -24,9 +30,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChatMessage, demoChats, demoContacts } from '../../data/demoData';
 
 export default function ChatScreen() {
+  console.log('ChatScreen rendered');
+  console.log("Paths.cache:",Paths.cache,"Paths.document.uri:",Paths.document.uri);
   const { id } = useLocalSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
+  const [downloadedFiles, setDownloadedFiles] = useState<Set<string>>(new Set());
   
   // Recording states - using exact Expo Audio pattern
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -611,6 +620,91 @@ export default function ChatScreen() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const downloadPdfFile = async (fileUrl: string, fileName: string) => {
+    console.log('📄 Download button clicked!');
+    console.log('📁 File Name:', fileName);
+    console.log('🔗 File URL:', fileUrl);
+
+    // Validate inputs
+    if (!fileUrl || !fileName) {
+      Alert.alert('Error', 'Invalid file URL or filename');
+      return;
+    }
+
+    // Mark file as downloaded
+    setDownloadedFiles(prev => new Set(prev).add(fileUrl));
+
+    try {
+      if (Platform.OS === 'web') {
+        // For web, open the file in a new tab
+        console.log('🌐 Opening file in browser...');
+        await WebBrowser.openBrowserAsync(fileUrl);
+        console.log('✅ File opened in browser!');
+      } else {
+        console.log('⬇️ Starting download...');
+
+      }
+    } catch (downloadError) {
+      console.error('❌ Download failed:', downloadError);
+      throw downloadError;
+    }
+      // Remove from downloadedFiles if it failed
+      setDownloadedFiles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(fileUrl);
+        return newSet;
+      });
+      
+  };
+
+  const openDownloadedFile = async (fileUrl: string, fileName: string) => {
+    console.log('📂 Opening downloaded file:', fileName);
+    
+    try {
+      // Check if file exists in Chat App folder
+      const chatAppDirectory = new Directory(Paths.cache.uri + 'Chat App');
+      const file = new File(chatAppDirectory, fileName);
+      
+      
+      // File should exist since we're using the API consistently
+      
+      if (Platform.OS === 'android') {
+        try {
+          const contentUri = await getContentUriAsync(file.uri);
+          console.log('📎 Content URI:', contentUri);
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1,
+            type: 'application/pdf'
+          });
+          console.log('✅ Intent opened successfully');
+        } catch (intentError) {
+          console.error('❌ Failed to open file with intent:', intentError);
+          
+          Alert.alert(
+            'Cannot Open File',
+            `Unable to open ${fileName}. File saved to Chat App folder.`,
+            [{ text: 'OK', style: 'default' }]
+          );
+        }
+      } else {
+        // For iOS, let user know file location
+        Alert.alert('File Ready!', `${fileName} is saved in Chat App folder.`, [{ text: 'OK', style: 'default' }]);
+      }
+    } catch (error) {
+      console.error('❌ Failed to open file:', error);
+      
+      // If it's a file system issue, restore download button
+      console.log('🔄 File system issue detected, restoring download button');
+      setDownloadedFiles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(fileUrl);
+        return newSet;
+      });
+      Alert.alert('Cannot Access File', 'The file cannot be accessed. Please download it again.');
+    }
+  };
+
   const renderMessage = ({ item }: { item: ChatMessage }) => (
     <View style={[
       styles.messageContainer,
@@ -698,6 +792,59 @@ export default function ChatScreen() {
                </View>
              </View>
            </View>
+        ) : item.type === 'pdf' ? (
+          <View style={styles.pdfMessageContainer}>
+            <View style={styles.pdfIconContainer}>
+              <Ionicons 
+                name="document-text" 
+                size={24} 
+                color={item.isUser ? '#ffffff' : '#007AFF'} 
+              />
+              <View style={styles.pdfLabel}>
+                <Text style={[styles.pdfLabelText, { color: item.isUser ? '#ffffff' : '#007AFF' }]}>PDF</Text>
+              </View>
+            </View>
+            {downloadedFiles.has(item.fileUrl || '') ? (
+              <TouchableOpacity 
+                style={styles.pdfFileNameContainer}
+                onPress={() => item.fileUrl && item.fileName && openDownloadedFile(item.fileUrl, item.fileName)}
+              >
+                <Text style={[
+                  styles.pdfFileName,
+                  styles.clickableFileName,
+                  item.isUser ? styles.userMessageText : styles.otherMessageText
+                ]}>
+                  {item.fileName}
+                </Text>
+                <Ionicons 
+                  name="open-outline" 
+                  size={16} 
+                  color={item.isUser ? '#ffffff' : '#007AFF'} 
+                />
+              </TouchableOpacity>
+            ) : (
+              <>
+                <View style={styles.pdfFileNameContainer}>
+                  <Text style={[
+                    styles.pdfFileName,
+                    item.isUser ? styles.userMessageText : styles.otherMessageText
+                  ]}>
+                    {item.fileName}
+                  </Text>
+                </View>
+                <TouchableOpacity 
+                  style={styles.pdfDownloadButton}
+                  onPress={() => item.fileUrl && item.fileName && downloadPdfFile(item.fileUrl, item.fileName)}
+                >
+                  <Ionicons 
+                    name="arrow-down-outline" 
+                    size={16} 
+                    color={item.isUser ? '#ffffff' : '#007AFF'} 
+                  />
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
         ) : (
           <Text style={[
             styles.messageText,
@@ -738,7 +885,7 @@ export default function ChatScreen() {
         <View style={styles.contactInfo}>
           <Text style={styles.avatar}>{contact.avatar}</Text>
           <View style={styles.contactDetails}>
-            <Text style={styles.contactName}>{contact.name}: Audio test</Text>
+            <Text style={styles.contactName}>{contact.name}: Download </Text>
             <Text style={styles.contactStatus}>Online</Text>
           </View>
         </View>
@@ -1291,5 +1438,51 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666666',
     marginBottom: 16,
+  },
+  pdfMessageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 48,
+    width: '100%',
+  },
+  pdfIconContainer: {
+    position: 'relative',
+    marginRight: 6,
+    marginLeft: 2,
+  },
+  pdfLabel: {
+    position: 'absolute',
+    bottom: -14,
+    right: -15,
+    width: 40,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  pdfLabelText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  pdfFileNameContainer: {
+    flex: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+  },
+  pdfFileName: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  clickableFileName: {
+    textDecorationLine: 'underline',
+  },
+  pdfDownloadButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
